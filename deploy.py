@@ -7,9 +7,11 @@ import mysql.connector
 def get_cmd_options():
     parser = argparse.ArgumentParser(
         description='Deploys recommendations to MySQL.')
-    parser.add_argument('action', help='Action to perform',
+    parser.add_argument('action',
+                        help='Action to perform.',
                         choices=['import_languages',
                                  'import_scores',
+                                 'create_views',
                                  'cleanup'])
     parser.add_argument('version', help='MySQL table version.')
     parser.add_argument('mysql_host', help='MySQL host.')
@@ -146,6 +148,18 @@ def import_scores(cursor, database, version, tsv, source, target):
     insert_scores_to_table(cursor, version, tsv, source_id, target_id)
 
 
+def create_views(cursor, version):
+    sql = """
+        CREATE OR REPLACE VIEW language
+          AS SELECT * FROM language_%s;
+        CREATE OR REPLACE VIEW article_recommendation
+          AS SELECT * FROM article_recommendation_%s;
+    """ % (version, version)
+    cursor.execute(sql, multi=True)
+    print('Created views for tables language_%s '
+          'and article_recommendation_%s.' % (version, version))
+
+
 def cleanup_old_data(cursor, version):
     sql = """
         DROP TABLE IF EXISTS language_%s;
@@ -175,8 +189,7 @@ def main():
             exit(1)
         import_languages(cursor, options.mysql_database,
                          options.version, options.language_file)
-
-    if 'import_scores' == options.action:
+    elif 'import_scores' == options.action:
         if not options.source_language or not options.target_language or\
            not options.scores_file:
             print('Source and target language are required.')
@@ -184,8 +197,9 @@ def main():
         import_scores(cursor, options.mysql_database,
                       options.version, options.scores_file,
                       options.source_language, options.target_language)
-
-    if 'cleanup' == options.action:
+    elif 'create_views' == options.action:
+        create_views(cursor, options.version)
+    elif 'cleanup' == options.action:
         cleanup_old_data(cursor, options.version)
 
     ctx.commit()
