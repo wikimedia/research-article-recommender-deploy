@@ -167,7 +167,8 @@ def cleanup_old_data(cursor, version):
     """ % (version, version)
     cursor.execute(sql, multi=True)
     print('Dropped tables language_%s and article_recommendation_%s '
-          'if they existed.' % (version, version))
+          'if they existed. Make sure to update your views if they '
+          'depended on this table version.' % (version, version))
 
 
 def main():
