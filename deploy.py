@@ -1,7 +1,6 @@
 #!/usr/bin/python3
 
 import argparse
-import json
 import mysql.connector
 
 
@@ -16,6 +15,7 @@ def get_cmd_options():
     parser.add_argument('mysql_host', help='MySQL host.')
     parser.add_argument('mysql_port', help='MySQL port.')
     parser.add_argument('mysql_database', help='MySQL database.')
+    parser.add_argument('mysql_user', help='MySQL user.')
     parser.add_argument('mysql_password_file',
                         help='File where MySQL password is stored.')
     parser.add_argument('--language_file',
@@ -31,9 +31,10 @@ def get_cmd_options():
     return parser.parse_args()
 
 
-def get_lang_id(cursor, lang):
+def get_lang_id(cursor, version, lang):
     cursor.execute(
-        "SELECT id FROM language_new WHERE code='%s' LIMIT 1;" % (lang))
+        "SELECT id FROM language_%s WHERE code='%s' LIMIT 1;"
+        % (version, lang))
     try:
         return cursor.fetchone()[0]
     except TypeError:
@@ -55,7 +56,7 @@ def insert_scores_to_table(cursor, version, tsv_file, source_id, target_id):
 
 def get_mysql_password(file):
     with open(file, 'r') as infile:
-        return infile.readline()
+        return infile.readline().strip()
 
 
 def table_exists_p(cursor, database, table_name):
@@ -67,7 +68,7 @@ def table_exists_p(cursor, database, table_name):
         LIMIT 1;
     """ % (database, table_name)
     cursor.execute(sql)
-    return cursor.fetchone()[0] == 1
+    return cursor.fetchone() is not None
 
 
 def create_language_table(cursor, version):
@@ -78,7 +79,7 @@ def create_language_table(cursor, version):
             PRIMARY KEY (`id`),
             UNIQUE KEY `code` (`code`)
         ) ENGINE=InnoDB;
-    """ % (version, version)
+    """ % (version)
     cursor.execute(sql)
 
 
@@ -93,7 +94,6 @@ def insert_languages_to_table(cursor, version, tsv):
 
 def create_article_recommendation_table(cursor, version):
     sql = """
-        DROP TABLE IF EXISTS `article_recommendation_%s`;
         CREATE TABLE `article_recommendation_%s` (
             `id` int(11) NOT NULL AUTO_INCREMENT,
             `wikidata_id` int(11) NOT NULL,
@@ -111,7 +111,7 @@ def create_article_recommendation_table(cursor, version):
                 FOREIGN KEY (`target_id`) REFERENCES `language_%s` (`id`)
                 ON DELETE CASCADE ON UPDATE CASCADE
         ) ENGINE=InnoDB;
-    """ % (version, version, version, version)
+    """ % (version, version, version)
     cursor.execute(sql)
 
 
@@ -119,7 +119,8 @@ def import_languages(cursor, database, version, tsv):
     table_name = 'language_%s' % version
 
     if table_exists_p(cursor, database, table_name):
-        print('Language table version %s already exists.')
+        print('Table %s already exists. Either drop it first '
+              'or import a new version.' % table_name)
         exit(1)
 
     create_language_table(cursor, version)
@@ -130,24 +131,35 @@ def import_scores(cursor, database, version, tsv, source, target):
     table_name = 'article_recommendation_%s' % version
 
     if table_exists_p(cursor, database, table_name):
-        print('Article recommendation table version %s already exists.')
+        print('Table %s already exists. '
+              'Either drop it first or import a new version.' % table_name)
         exit(1)
 
     create_article_recommendation_table(cursor, version)
-    source_id = get_lang_id(cursor, source)
-    target_id = get_lang_id(cursor, target)
+    source_id = get_lang_id(cursor, version, source)
+    target_id = get_lang_id(cursor, version, target)
+    if not source_id:
+        print("Source language doesn't exist in the database.")
+        exit()
+    if not target_id:
+        print("Target language doesn't exist in the database.")
     insert_scores_to_table(cursor, version, tsv, source_id, target_id)
 
 
 def cleanup_old_data(cursor, version):
     sql = """
-        DROP TABLE IF EXISTS language_%s, article_recommendation_%s"
+        DROP TABLE IF EXISTS language_%s;
+        DROP TABLE IF EXISTS article_recommendation_%s;"
     """ % (version, version)
-    cursor.execute(sql)
+    cursor.execute(sql, multi=True)
+    print('Dropped tables language_%s and article_recommendation_%s '
+          'if they existed.' % (version, version))
 
 
 def main():
     options = get_cmd_options()
+    # print(get_mysql_password(options.mysql_password_file))
+    # exit()
     ctx = mysql.connector.connect(
         host=options.mysql_host,
         port=options.mysql_port,
@@ -156,12 +168,13 @@ def main():
         database=options.mysql_database)
     cursor = ctx.cursor()
 
+    print("Starting ...")
     if 'import_languages' == options.action:
-        if not options.languages_file:
+        if not options.language_file:
             print('The languages file is not supplied.')
             exit(1)
         import_languages(cursor, options.mysql_database,
-                         options.version, options.languages_file)
+                         options.version, options.language_file)
 
     if 'import_scores' == options.action:
         if not options.source_language or not options.target_language or\
@@ -178,6 +191,8 @@ def main():
     ctx.commit()
     cursor.close()
     ctx.close()
+
+    print("Done")
 
 
 if __name__ == '__main__':
