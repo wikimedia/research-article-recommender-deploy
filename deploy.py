@@ -132,12 +132,10 @@ def import_languages(cursor, database, version, tsv):
 def import_scores(cursor, database, version, tsv, source, target):
     table_name = 'article_recommendation_%s' % version
 
-    if table_exists_p(cursor, database, table_name):
-        print('Table %s already exists. '
-              'Either drop it first or import a new version.' % table_name)
-        exit(1)
+    if not table_exists_p(cursor, database, table_name):
+        create_article_recommendation_table(cursor, version)
+        print('Created table %s.' % table_name)
 
-    create_article_recommendation_table(cursor, version)
     source_id = get_lang_id(cursor, version, source)
     target_id = get_lang_id(cursor, version, target)
     if not source_id:
@@ -180,7 +178,8 @@ def main():
         port=options.mysql_port,
         user=options.mysql_user,
         passwd=get_mysql_password(options.mysql_password_file),
-        database=options.mysql_database)
+        database=options.mysql_database,
+        client_flags=[mysql.connector.constants.ClientFlag.LOCAL_FILES])
     cursor = ctx.cursor()
 
     print("Starting ...")
