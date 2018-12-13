@@ -10,7 +10,7 @@ def get_cmd_options():
     parser.add_argument('action',
                         help='Action to perform.',
                         choices=['import_languages',
-                                 'import_scores',
+                                 'import_normalized_ranks',
                                  'create_views',
                                  'cleanup'])
     parser.add_argument('version', help='MySQL table version.')
@@ -23,20 +23,23 @@ def get_cmd_options():
     parser.add_argument('--language_file',
                         help='Languages file in TSV format. '
                         'Required when importing languages.')
-    parser.add_argument('--scores_file',
-                        help='Scores file in TSV format. '
-                        'Required when importin scores.')
+    parser.add_argument('--normalized_ranks_file',
+                        help='Normalized ranks file in TSV format. '
+                        'Required when importing normalized ranks.')
     parser.add_argument('--source_language', help='Source language. '
-                        'Required when importing scores.')
+                        'Required when importing normalized ranks.')
     parser.add_argument('--target_language', help='Target language. '
-                        'Required when importing scores.')
+                        'Required when importing normalized ranks.')
     return parser.parse_args()
 
 
 def get_lang_id(cursor, version, lang):
-    cursor.execute(
-        "SELECT id FROM language_%s WHERE code='%s' LIMIT 1;"
-        % (version, lang))
+    sql = "SELECT id FROM language_{version} WHERE code='{lang}' LIMIT 1"
+    data = {
+        'version': version,
+        'lang': lang
+    }
+    cursor.execute(sql.format(**data))
     try:
         return cursor.fetchone()[0]
     except TypeError:
@@ -44,16 +47,22 @@ def get_lang_id(cursor, version, lang):
         return None
 
 
-def insert_scores_to_table(cursor, version, tsv_file, source_id, target_id):
-    """Load recommendation scores into the database"""
-    load_data = "LOAD DATA LOCAL INFILE '%s' "\
-        "INTO TABLE article_recommendation_%s "\
-        "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "\
-        "IGNORE 1 LINES "\
-        "(wikidata_id, score) "\
-        "SET id=NULL, source_id=%d, target_id=%d;" %\
-        (tsv_file, version, source_id, target_id)
-    cursor.execute(load_data)
+def insert_normalized_ranks_to_table(cursor, version, tsv, source_id,
+                                     target_id):
+    """Load recommendation normalized ranks into the database"""
+    sql = ("LOAD DATA LOCAL INFILE '{tsv}' "
+           "INTO TABLE normalized_rank_{version} "
+           "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "
+           "IGNORE 1 LINES "
+           "(wikidata_id, normalized_rank) "
+           "SET source_id={source_id}, target_id={target_id}")
+    data = {
+        'tsv': tsv,
+        'version': version,
+        'source_id': source_id,
+        'target_id': target_id
+    }
+    cursor.execute(sql.format(**data))
 
 
 def get_mysql_password(file):
@@ -61,60 +70,65 @@ def get_mysql_password(file):
         return infile.readline().strip()
 
 
-def table_exists_p(cursor, database, table_name):
-    sql = """
-        SELECT *
-        FROM information_schema.tables
-        WHERE table_schema = '%s'
-        AND table_name = '%s'
-        LIMIT 1;
-    """ % (database, table_name)
-    cursor.execute(sql)
+def table_exists_p(cursor, database, table):
+    sql = ("SELECT * "
+           "FROM information_schema.tables "
+           "WHERE table_schema = '{database}' "
+           "AND table_name = '{table}' "
+           "LIMIT 1")
+    data = {
+        'database': database,
+        'table': table
+    }
+    cursor.execute(sql.format(**data))
     return cursor.fetchone() is not None
 
 
 def create_language_table(cursor, version):
-    sql = """
-        CREATE TABLE `language_%s` (
-            `id` smallint(6) NOT NULL AUTO_INCREMENT,
-            `code` varchar(8) NOT NULL,
-            PRIMARY KEY (`id`),
-            UNIQUE KEY `code` (`code`)
-        ) ENGINE=InnoDB;
-    """ % (version)
-    cursor.execute(sql)
+    sql = ("CREATE TABLE `language_{version}` ( "
+           "`id` smallint(6) NOT NULL AUTO_INCREMENT, "
+           "`code` varchar(8) NOT NULL, "
+           "PRIMARY KEY (`id`), "
+           "UNIQUE KEY `code` (`code`) "
+           ") ENGINE=InnoDB")
+    data = {
+        'version': version
+    }
+    cursor.execute(sql.format(**data))
 
 
 def insert_languages_to_table(cursor, version, tsv):
-    sql = "LOAD DATA LOCAL INFILE '%s' INTO TABLE language_%s "\
-        "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "\
-        "(code) "\
-        "SET id=NULL" %\
-        (tsv, version)
-    cursor.execute(sql)
+    sql = ("LOAD DATA LOCAL INFILE '{tsv}' INTO TABLE language_{version} "
+           "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "
+           "(code) "
+           "SET id=NULL")
+    data = {
+        'tsv': tsv,
+        'version': version
+    }
+    cursor.execute(sql.format(**data))
 
 
-def create_article_recommendation_table(cursor, version):
-    sql = """
-        CREATE TABLE `article_recommendation_%s` (
-            `id` int(11) NOT NULL AUTO_INCREMENT,
-            `wikidata_id` int(11) NOT NULL,
-            `score` float NOT NULL,
-            `source_id` smallint(6) NOT NULL,
-            `target_id` smallint(6) NOT NULL,
-            PRIMARY KEY (`id`),
-            KEY `wikidata_id` (`wikidata_id`),
-            KEY `source_id` (`source_id`),
-            KEY `target_id` (`target_id`),
-            CONSTRAINT `article_recommendation_ibfk_1`
-                FOREIGN KEY (`source_id`) REFERENCES `language_%s` (`id`)
-                ON DELETE CASCADE ON UPDATE CASCADE,
-            CONSTRAINT `article_recommendation_ibfk_2`
-                FOREIGN KEY (`target_id`) REFERENCES `language_%s` (`id`)
-                ON DELETE CASCADE ON UPDATE CASCADE
-        ) ENGINE=InnoDB;
-    """ % (version, version, version)
-    cursor.execute(sql)
+def create_normalized_rank_table(cursor, version):
+    sql = ("CREATE TABLE `normalized_rank_{version}` ( "
+           "`wikidata_id` int(11) NOT NULL, "
+           "`normalized_rank` float NOT NULL, "
+           "`source_id` smallint(6) NOT NULL, "
+           "`target_id` smallint(6) NOT NULL, "
+           "KEY `wikidata_id` (`wikidata_id`), "
+           "KEY `source_id` (`source_id`), "
+           "KEY `target_id` (`target_id`), "
+           "CONSTRAINT `normalized_rank_ibfk_1_{version}` "
+           "FOREIGN KEY (`source_id`) REFERENCES `language_{version}` (`id`) "
+           "ON DELETE CASCADE ON UPDATE CASCADE, "
+           "CONSTRAINT `normalized_rank_ibfk_2_{version}` "
+           "FOREIGN KEY (`target_id`) REFERENCES `language_{version}` (`id`) "
+           "ON DELETE CASCADE ON UPDATE CASCADE "
+           ") ENGINE=InnoDB")
+    data = {
+        'version': version
+    }
+    cursor.execute(sql.format(**data))
 
 
 def import_languages(cursor, database, version, tsv):
@@ -129,11 +143,11 @@ def import_languages(cursor, database, version, tsv):
     insert_languages_to_table(cursor, version, tsv)
 
 
-def import_scores(cursor, database, version, tsv, source, target):
-    table_name = 'article_recommendation_%s' % version
+def import_normalized_ranks(cursor, database, version, tsv, source, target):
+    table_name = 'normalized_rank_%s' % version
 
     if not table_exists_p(cursor, database, table_name):
-        create_article_recommendation_table(cursor, version)
+        create_normalized_rank_table(cursor, version)
         print('Created table %s.' % table_name)
 
     source_id = get_lang_id(cursor, version, source)
@@ -143,44 +157,55 @@ def import_scores(cursor, database, version, tsv, source, target):
         exit()
     if not target_id:
         print("Target language doesn't exist in the database.")
-    insert_scores_to_table(cursor, version, tsv, source_id, target_id)
+    insert_normalized_ranks_to_table(cursor, version, tsv, source_id,
+                                     target_id)
 
 
 def create_views(cursor, version):
-    sql = """
-        CREATE OR REPLACE VIEW language
-          AS SELECT * FROM language_%s;
-        CREATE OR REPLACE VIEW article_recommendation
-          AS SELECT * FROM article_recommendation_%s;
-    """ % (version, version)
-    cursor.execute(sql, multi=True)
-    print('Created views for tables language_%s '
-          'and article_recommendation_%s.' % (version, version))
+    cursor.execute("CREATE OR REPLACE VIEW language "
+                   "AS SELECT * FROM language_%s" % version)
+    print('Created view "language" for the table "language_%s".' % version)
+
+    cursor.execute("CREATE OR REPLACE VIEW normalized_rank "
+                   "AS SELECT * FROM normalized_rank_%s" % version)
+    print('Created view "normalized_rank" for the table '
+          '"normalized_rank_%s".' % version)
 
 
-def cleanup_old_data(cursor, version):
-    sql = """
-        DROP TABLE IF EXISTS language_%s;
-        DROP TABLE IF EXISTS article_recommendation_%s;"
-    """ % (version, version)
-    cursor.execute(sql, multi=True)
-    print('Dropped tables language_%s and article_recommendation_%s '
-          'if they existed. Make sure to update your views if they '
-          'depended on this table version.' % (version, version))
+def cleanup_old_data(cursor, database, version):
+    normalized_rank_table = 'normalized_rank_%s' % version
+    language_table = 'language_%s' % version
+
+    if table_exists_p(cursor, database, normalized_rank_table):
+        cursor.execute("DROP TABLE %s;" % normalized_rank_table)
+        print('Dropped table %s.' % normalized_rank_table)
+    else:
+        print('Table %s doesn\'t exist.' % normalized_rank_table)
+
+    if table_exists_p(cursor, database, language_table):
+        cursor.execute("DROP TABLE %s;" % language_table)
+        print('Dropped table %s.' % language_table)
+    else:
+        print('Table %s doesn\'t exist.' % language_table)
+
+    print('Make sure to update the views if they '
+          'depended on dropped tables.')
 
 
 def main():
     options = get_cmd_options()
-    # print(get_mysql_password(options.mysql_password_file))
-    # exit()
-    ctx = mysql.connector.connect(
+    context = mysql.connector.connect(
         host=options.mysql_host,
         port=options.mysql_port,
         user=options.mysql_user,
         passwd=get_mysql_password(options.mysql_password_file),
         database=options.mysql_database,
-        client_flags=[mysql.connector.constants.ClientFlag.LOCAL_FILES])
-    cursor = ctx.cursor()
+        client_flags=[
+            mysql.connector.constants.ClientFlag.LOCAL_FILES,
+            mysql.connector.constants.ClientFlag.MULTI_STATEMENTS
+        ])
+        # autocommit=True)
+    cursor = context.cursor()
 
     print("Starting ...")
     if 'import_languages' == options.action:
@@ -189,22 +214,24 @@ def main():
             exit(1)
         import_languages(cursor, options.mysql_database,
                          options.version, options.language_file)
-    elif 'import_scores' == options.action:
+    elif 'import_normalized_ranks' == options.action:
         if not options.source_language or not options.target_language or\
-           not options.scores_file:
+           not options.normalized_ranks_file:
             print('Source and target language are required.')
             exit(1)
-        import_scores(cursor, options.mysql_database,
-                      options.version, options.scores_file,
-                      options.source_language, options.target_language)
+        import_normalized_ranks(cursor,
+                                options.mysql_database,
+                                options.version,
+                                options.normalized_ranks_file,
+                                options.source_language,
+                                options.target_language)
     elif 'create_views' == options.action:
         create_views(cursor, options.version)
     elif 'cleanup' == options.action:
-        cleanup_old_data(cursor, options.version)
+        cleanup_old_data(cursor, options.mysql_database, options.version)
 
-    ctx.commit()
-    cursor.close()
-    ctx.close()
+    context.commit()
+    context.close()
 
     print("Done")
 

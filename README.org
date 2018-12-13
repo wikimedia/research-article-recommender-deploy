@@ -1,4 +1,4 @@
-* Importing article recommendation scores to MySQL
+* Importing Wikidata item normalized ranks to MySQL
 
 ** Requirements
    On Debian: python-mysql.connector
@@ -16,12 +16,12 @@
       3306 recommendationapi recommendationapi recommendationapi_password.txt \
       --language_file languages.tsv
 
-   2. Import scores (make sure to change the source and target
+   2. Import normalized ranks (make sure to change the source and target
       languages when importing other files):
 
-      python deploy.py import_scores 20181130 m2-master.eqiad.wmnet \
+      python deploy.py import_normalized_ranks 20181130 m2-master.eqiad.wmnet \
       3306 recommendationapi recommendationapi recommendationapi_password.txt \
-      --scores_file predictions-06032018-20181130/en-es.tsv \
+      --normalized_ranks_file predictions-06032018-20181130/en-es.tsv \
       --source_language en --target_language es
 
    3. Create views so that the recommendation API can access the data:
