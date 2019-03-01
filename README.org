@@ -4,7 +4,7 @@
    On Debian: python-mysql.connector
 
 ** How to import data
-   Data is in stat1007:/home/bmansurov/tp9/article-recommender-deploy/
+   Test  data can be found [[https://analytics.wikimedia.org/datasets/one-off/article-recommender/20181130.tar.gz][here]].
 
    Assuming TSV files are in the current directory, run the following
    commands in order:
