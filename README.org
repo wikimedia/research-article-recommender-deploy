@@ -4,7 +4,7 @@
    On Debian: python-mysql.connector
 
 ** How to import data
-   Test  data can be found [[https://analytics.wikimedia.org/datasets/one-off/article-recommender/20181130.tar.gz][here]].
+   Test data can be found [[https://analytics.wikimedia.org/datasets/one-off/article-recommender/20181130.tar.gz][here]].
 
    Assuming TSV files are in the current directory, run the following
    commands in order:
@@ -35,4 +35,24 @@
 
       python deploy.py cleanup 20181130 m2-master.eqiad.wmnet \
       3306 recommendationapi recommendationapi recommendationapi_password.txt
+
+** Prepare a deploy
+   If any python dependencies have been updated the
+   artifacts/ directory needs to be updated as well.
+   On your local machine:
+
+   - git rm artifacts/*.whl
+   - ./bin/make-wheels.sh
+   - ./bin/upload-wheels.py
+   - git add artifacts/*.whl
+
+   The make-wheels.sh script checks the current oozie task for a
+   requirements.txt. If present all necessary wheel's are collected into
+   artifacts/ and a requirements-frozen.txt containing exact versioning
+   is emitted.
+
+   The upload-wheels.py script will sync the wheels to archiva. If a wheel
+   already exists in archiva for the same version but a different sha1
+   your local version will be replaced. Wheel upload requires setting up
+   maven with [[https://wikitech.wikimedia.org/wiki/Archiva#Deploy_to_Archiva][WMF's Archiva]] configuration.
 
