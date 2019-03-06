@@ -19,21 +19,18 @@ set -o pipefail
 # https://bugs.debian.org/cgi-bin/bugreport.cgi?att=1;bug=776026;filename=wheel_reproducible.patch;msg=5
 export SOURCE_DATE_EPOCH=315576060
 
-BASE_DIR="$(dirname $(dirname $(dirname $(realpath $0))))"
-WHEEL_DIR="${BASE_DIR}/artifacts/article-recommender"
-OOZIE_DIR="${BASE_DIR}/oozie"
-BUILD_DIR="${BASE_DIR}/_article_recommender_build"
+BASE_DIR="$(dirname $(dirname $(realpath $0)))"
+WHEEL_DIR="${BASE_DIR}/artifacts"
+BUILD_DIR="${BASE_DIR}/_build"
 VENV_DIR="${BUILD_DIR}/venv"
 PIP="${VENV_DIR}/bin/pip"
-TASK_DIR="${OOZIE_DIR}/article_recommender"
-TASK_NAME="$(basename "$TASK_DIR")"
-REQUIREMENTS="${TASK_DIR}/requirements.txt"
-REQUIREMENTS_FROZEN="${TASK_DIR}/requirements-frozen.txt"
+REQUIREMENTS="${BASE_DIR}/requirements.txt"
+REQUIREMENTS_FROZEN="${BASE_DIR}/requirements-frozen.txt"
 
 if [ ! -f "${REQUIREMENTS}" ]; then
-    echo "No python packaging needed for $TASK_NAME"
+    echo "No python packaging needed."
 else
-    echo "Building python packaging for $TASK_NAME"
+    echo "Building python packaging."
     rm -rf "${BUILD_DIR}"
     mkdir -p "${VENV_DIR}"
     virtualenv --python "${PYTHON_PATH:-python3}" "${VENV_DIR}"

@@ -6,7 +6,7 @@ https://phabricator.wikimedia.org/diffusion/WDAN/browse/master/bin/
 Uploads python wheels to archiva
 
 Usage:
-    upload-wheels artifacts/article-recommender/*.whl
+    upload-wheels artifacts/*.whl
 """
 
 from __future__ import print_function
