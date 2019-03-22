@@ -57,6 +57,8 @@
    maven with [[https://wikitech.wikimedia.org/wiki/Archiva#Deploy_to_Archiva][WMF's Archiva]] configuration.
 
 ** Prepare environment for Oozie
+   - Ssh stat1007 so that you get the same version of python that the
+     cluster has (is that true?)
    - ./bin/create-environment.sh
    - Copy over the generated zip file to the `artifacts` folder of
      [[https://gerrit.wikimedia.org/r/#/admin/projects/analytics/refinery][analytics/refinery]].

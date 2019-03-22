@@ -26,8 +26,13 @@ else
     # Ensure we have a virtualenv
     if [ ! -x "$PIP" ];then
         mkdir -p "$VENV"
-        virtualenv --never-download --python python3 "$VENV"
+        virtualenv --never-download --system-site-packages --python python3 "$VENV"
+        virtualenv --relocatable "$VENV"
     fi
+
+    set +u
+    source "${VENV}/bin/activate"
+    set -u
 
     # Install or upgrade our packages
     $PIP install \
@@ -36,6 +41,9 @@ else
         --upgrade \
         --force-reinstall \
         -r "$REQUIREMENTS"
+
+    deactivate
+
     # Wrap it all up to be deployed by spark to executors
     ( cd "$VENV" && zip -qr "${ZIP_PATH}" . )
     rm -rf "$VENV"
