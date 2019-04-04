@@ -1,1 +1,1 @@
-git+https://github.com/wikimedia/research-article-recommender
+git+https://gerrit.wikimedia.org/r/research/article-recommender
