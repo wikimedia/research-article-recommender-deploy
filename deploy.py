@@ -2,6 +2,11 @@
 
 import argparse
 import mysql.connector
+import os
+from shutil import rmtree
+
+
+MAX_CHUNK_SIZE = 50000 # Maximum number of rows in a chunk when importing normalized rank tsv.
 
 
 def get_cmd_options():
@@ -47,22 +52,79 @@ def get_lang_id(cursor, version, lang):
         return None
 
 
-def insert_normalized_ranks_to_table(cursor, version, tsv, source_id,
-                                     target_id):
-    """Load recommendation normalized ranks into the database"""
+def chunk_name(chunk_number, dir_name):
+    """Get the name of chunk file"""
+    return os.path.join(dir_name, ('chunk-' + str(chunk_number) + '.tsv'))
+
+
+def get_temp_directory_name(tsv):
+    """Returns the temporary directory name."""
+    return os.path.join('/tmp', tsv.replace('/', '-'))
+
+
+def delete_directory_if_exists(dir_name):
+    """Deletes the directory in case it exists."""
+    if os.path.exists(dir_name):
+        rmtree(dir_name)
+
+
+def create_tsv_chunks(dir_name, tsv):
+    """Creates chunks and returns the list of generated chunks"""
+    chunks = []
+    with open(tsv, 'r') as tsv_file:
+        next(tsv_file)
+        current_chunk_number = 0
+        new_chunk_name = chunk_name(current_chunk_number, dir_name)
+        chunks.append(new_chunk_name)
+        with open(new_chunk_name, 'w') as chunk_file:
+            for line_number, line in enumerate(tsv_file):
+                chunk_number = (line_number + 1) // MAX_CHUNK_SIZE
+                chunk_file.write(line)
+                if chunk_number != current_chunk_number:
+                    chunk_file.close()
+                    current_chunk_number = chunk_number
+                    new_chunk_name = chunk_name(current_chunk_number, dir_name)
+                    chunks.append(new_chunk_name)
+                    chunk_file = open(new_chunk_name, 'w')
+            chunk_file.close()
+    return chunks
+
+
+def insert_chunk_to_table(tsv_file, version, source_id, target_id, cursor, context):
+    """Load the chunk into the database"""
     sql = ("LOAD DATA LOCAL INFILE '{tsv}' "
-           "INTO TABLE normalized_rank_{version} "
-           "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "
-           "IGNORE 1 LINES "
-           "(wikidata_id, normalized_rank) "
-           "SET source_id={source_id}, target_id={target_id}")
+            "INTO TABLE normalized_rank_{version} "
+            "FIELDS TERMINATED BY '\t' LINES TERMINATED BY '\n' "
+            "(wikidata_id, normalized_rank) "
+            "SET source_id={source_id}, target_id={target_id}")
     data = {
-        'tsv': tsv,
+        'tsv': tsv_file,
         'version': version,
         'source_id': source_id,
         'target_id': target_id
     }
-    cursor.execute(sql.format(**data))
+    try:
+        cursor.execute(sql.format(**data))
+    except Exception as e:
+        print(e)
+        context.rollback()
+        exit(1)
+
+
+def insert_normalized_ranks(cursor, context, version, tsv, source_id,
+                            target_id):
+    """
+    Creates chunks of recommendation normalized ranks tsv file, inserts the
+    chunks into the database and deletes the chunks.
+    """
+    dir_name = get_temp_directory_name(tsv)
+    delete_directory_if_exists(dir_name)
+    os.mkdir(dir_name)
+    chunks = create_tsv_chunks(dir_name, tsv)
+    for tsv_file in chunks:
+        insert_chunk_to_table(tsv_file, version, source_id, target_id, cursor, context)
+        os.remove(tsv_file)
+    rmtree(dir_name)
 
 
 def get_mysql_password(file):
@@ -143,7 +205,7 @@ def import_languages(cursor, database, version, tsv):
     insert_languages_to_table(cursor, version, tsv)
 
 
-def import_normalized_ranks(cursor, database, version, tsv, source, target):
+def import_normalized_ranks(cursor, context, database, version, tsv, source, target):
     table_name = 'normalized_rank_%s' % version
 
     if not table_exists_p(cursor, database, table_name):
@@ -157,8 +219,8 @@ def import_normalized_ranks(cursor, database, version, tsv, source, target):
         exit()
     if not target_id:
         print("Target language doesn't exist in the database.")
-    insert_normalized_ranks_to_table(cursor, version, tsv, source_id,
-                                     target_id)
+    insert_normalized_ranks(cursor, context, version, tsv,
+                            source_id, target_id)
 
 
 def create_views(cursor, version):
@@ -220,6 +282,7 @@ def main():
             print('Source and target language are required.')
             exit(1)
         import_normalized_ranks(cursor,
+                                context,
                                 options.mysql_database,
                                 options.version,
                                 options.normalized_ranks_file,
